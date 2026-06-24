@@ -1,0 +1,6 @@
+{
+  "name": "Pencatatan Keuangan Pribadi",
+  "description": "Aplikasi pencatatan keuangan pribadi modern dengan dasbor interaktif, grafik pemasukan dan pengeluaran, manajemen target tabungan, dan ekspor laporan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

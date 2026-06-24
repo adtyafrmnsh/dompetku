@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- VALIDATION BLUEPRINTS ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'username', 'email', 'fullName'])
+        && data.keys().size() <= 5
+        && data.id is string && data.id.size() <= 128
+        && data.username is string && data.username.size() <= 64
+        && data.email is string && data.email.size() <= 128
+        && data.fullName is string && data.fullName.size() <= 128
+        && (data.get('avatarBg', null) == null || (data.avatarBg is string && data.avatarBg.size() <= 64));
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['id', 'userId', 'date', 'amount', 'type', 'category'])
+        && data.keys().size() <= 9
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.date is string && data.date.size() == 10
+        && data.amount is number && data.amount >= 0
+        && (data.type == 'income' || data.type == 'expense')
+        && data.category is string && data.category.size() <= 64
+        && (data.get('method', null) == null || (data.method is string && data.method.size() <= 64))
+        && (data.get('purpose', null) == null || (data.purpose is string && data.purpose.size() <= 256))
+        && (data.get('notes', null) == null || (data.notes is string && data.notes.size() <= 512));
+    }
+
+    function isValidSavingsTarget(data) {
+      return data.keys().hasAll(['id', 'userId', 'name', 'targetAmount', 'currentProgress'])
+        && data.keys().size() <= 6
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.name is string && data.name.size() <= 128
+        && data.targetAmount is number && data.targetAmount >= 0
+        && data.currentProgress is number && data.currentProgress >= 0
+        && (data.get('targetDate', null) == null || (data.targetDate is string && data.targetDate.size() <= 10));
+    }
+
+    // --- COLLECTION MATCH BLOCKS ---
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create, update: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming());
+    }
+
+    // 2. Transactions Collection
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidId(transactionId) && isValidTransaction(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidTransaction(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // 3. Targets (Savings Targets) Collection
+    match /targets/{targetId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidId(targetId) && isValidSavingsTarget(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && isValidSavingsTarget(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+  }
+}
